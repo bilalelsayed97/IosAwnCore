@@ -118,7 +118,18 @@ open class AudioUtils: MediaUtils {
         var mediaPath:String? = cleanMediaPath(mediaPath)
         
         //do {
-            if mediaPath!.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1") {
+            if let name = mediaPath?.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1") {
+                
+                // 1. Try with the extensions (caf, aiff, wav, mp3)
+                let extensions = ["caf", "aiff", "wav", "mp3"]
+                
+                for ext in extensions {
+                    if let path = Bundle.main.path(forResource: name, ofType: ext) {
+                        return UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(name).\(ext)"))
+                    }
+                }
+                
+                // 2. Fallback to original behavior
                 var topPath:String? = Bundle.main.url(forResource: mediaPath!, withExtension: "aiff")?.absoluteString
                 
                 if ((topPath?.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1")) != nil){
