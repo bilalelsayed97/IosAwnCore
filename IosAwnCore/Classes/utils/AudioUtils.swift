@@ -105,10 +105,23 @@ open class AudioUtils: MediaUtils {
     
     open func getSoundFromFile(fromRealPath mediaPath:String) -> UNNotificationSound? {
         if FileManager.default.fileExists(atPath: mediaPath) {
+            // UNNotificationSound(named:) only accepts a file name resolved
+            // against the bundle or Library/Sounds — never an absolute path.
+            if let librarySounds = librarySoundsDirectory(),
+               mediaPath.hasPrefix(librarySounds.path) {
+                let fileName = URL(fileURLWithPath: mediaPath).lastPathComponent
+                return UNNotificationSound(named: UNNotificationSoundName(rawValue: fileName))
+            }
             return UNNotificationSound(named: UNNotificationSoundName(rawValue: mediaPath))
         }
         
         return UNNotificationSound.default
+    }
+    
+    /// `<app>/Library/Sounds`, the second directory iOS searches for named sounds.
+    private func librarySoundsDirectory() -> URL? {
+        return FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("Sounds", isDirectory: true)
     }
     
     open func getSoundFromAsset(_ mediaPath:String) -> UNNotificationSound? {
@@ -137,6 +150,18 @@ open class AudioUtils: MediaUtils {
             for ext in extensions {
                 if let validName = name, let path = Bundle.main.path(forResource: validName, ofType: ext) {
                      return UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(validName).\(ext)"))
+                }
+            }
+            
+            // 1b. Sounds the app downloaded into <app>/Library/Sounds/ — iOS
+            //     resolves UNNotificationSound(named:) against that directory
+            //     exactly like the main bundle, using the bare file name.
+            if let validName = name, let librarySounds = librarySoundsDirectory() {
+                for ext in extensions {
+                    let fileName = "\(validName).\(ext)"
+                    if FileManager.default.fileExists(atPath: librarySounds.appendingPathComponent(fileName).path) {
+                        return UNNotificationSound(named: UNNotificationSoundName(rawValue: fileName))
+                    }
                 }
             }
             
