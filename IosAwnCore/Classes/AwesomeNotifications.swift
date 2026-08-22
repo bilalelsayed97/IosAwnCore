@@ -163,6 +163,16 @@ public class AwesomeNotifications:
         // be deferred. We do not chain to a previously-installed delegate (e.g.
         // the official FirebaseMessaging plugin, which can claim it after us
         // without forwarding); FCM is handled by awesome_notifications_fcm.
+        //
+        // Fork change: DO capture whatever delegate is installed at this point
+        // (in a Flutter UIScene app that is the FlutterAppDelegate, which fans
+        // out to firebase_messaging / flutter_local_notifications) so the
+        // willPresent/didReceive forwarding keeps working for notifications
+        // that are not ours.
+        if let currentDelegate = UNUserNotificationCenter.current().delegate,
+           currentDelegate !== self {
+            _originalNotificationCenterDelegate = currentDelegate
+        }
         UNUserNotificationCenter.current().delegate = self
 
         // Classic (AppDelegate) lifecycle: the plugin is registered from
@@ -549,6 +559,13 @@ public class AwesomeNotifications:
     
     // *****************************  IOS NOTIFICATION CENTER METHODS  **********************************
 
+    /// Fork addition: the delegate that owned the notification center before
+    /// this plugin claimed it (in a Flutter app the FlutterAppDelegate, which
+    /// fans out to firebase_messaging / flutter_local_notifications).
+    /// Notifications that are not ours are forwarded to it so FCM foreground
+    /// presentation and tap handling keep working.
+    private var _originalNotificationCenterDelegate: UNUserNotificationCenterDelegate?
+
     @objc public func didFinishLaunch(_ application: UIApplication) {
         finishLaunching()
     }
@@ -580,6 +597,30 @@ public class AwesomeNotifications:
         withCompletionHandler completionHandler: @escaping () -> Void
     ){
         Logger.shared.d(TAG, "Notification Category Identifier (action): \(response.notification.request.content.categoryIdentifier)")
+
+        // Not an awesome notification (e.g. an FCM push tapped by the user):
+        // hand the response to the original delegate so firebase_messaging
+        // still receives onMessageOpenedApp events.
+        let responseJsonData:[String : Any?] =
+                extractNotificationJsonMap(
+                    fromContent: response.notification.request.content)
+        if NotificationBuilder
+                .newInstance()
+                .jsonDataToNotificationModel(jsonData: responseJsonData) == nil {
+            if let originalDelegate = _originalNotificationCenterDelegate,
+               originalDelegate.responds(
+                   to: #selector(UNUserNotificationCenterDelegate
+                       .userNotificationCenter(_:didReceive:withCompletionHandler:))) {
+                originalDelegate.userNotificationCenter?(
+                    center,
+                    didReceive: response,
+                    withCompletionHandler: completionHandler)
+            } else {
+                completionHandler()
+            }
+            return
+        }
+
         do {
             let buttonKeyPressed = response.actionIdentifier == UNNotificationDefaultActionIdentifier.description ?
                 nil : response.actionIdentifier
@@ -678,7 +719,20 @@ public class AwesomeNotifications:
             
         }
         else {
-            completionHandler([.alert, .badge, .sound])
+            // Not an awesome notification (e.g. an FCM push): let the original
+            // delegate decide the foreground presentation, as it did before
+            // this plugin claimed the notification center.
+            if let originalDelegate = _originalNotificationCenterDelegate,
+               originalDelegate.responds(
+                   to: #selector(UNUserNotificationCenterDelegate
+                       .userNotificationCenter(_:willPresent:withCompletionHandler:))) {
+                originalDelegate.userNotificationCenter?(
+                    center,
+                    willPresent: notification,
+                    withCompletionHandler: completionHandler)
+            } else {
+                completionHandler([.alert, .badge, .sound])
+            }
         }
         
         do {
