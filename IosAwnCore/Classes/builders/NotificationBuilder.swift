@@ -545,6 +545,7 @@ public class NotificationBuilder {
                 
                 if(!StringUtils.shared.isNullOrEmpty(channel.soundSource)){
                     content.sound = AudioUtils.shared.getSoundFromSource(SoundPath: channel.soundSource!)
+                    Logger.shared.d(TAG, "setSound: channel '\(channel.channelKey ?? "?")' soundSource '\(channel.soundSource ?? "?")' -> \(String(describing: content.sound))")
                     return
                 }
                 

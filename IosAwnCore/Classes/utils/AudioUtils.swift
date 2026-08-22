@@ -149,6 +149,7 @@ open class AudioUtils: MediaUtils {
             
             for ext in extensions {
                 if let validName = name, let path = Bundle.main.path(forResource: validName, ofType: ext) {
+                     Logger.shared.d("AudioUtils", "sound resolved from bundle: \(validName).\(ext) at \(path)")
                      return UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(validName).\(ext)"))
                 }
             }
@@ -160,6 +161,7 @@ open class AudioUtils: MediaUtils {
                 for ext in extensions {
                     let fileName = "\(validName).\(ext)"
                     if FileManager.default.fileExists(atPath: librarySounds.appendingPathComponent(fileName).path) {
+                        Logger.shared.d("AudioUtils", "sound resolved from Library/Sounds: \(fileName)")
                         return UNNotificationSound(named: UNNotificationSoundName(rawValue: fileName))
                     }
                 }
@@ -171,6 +173,7 @@ open class AudioUtils: MediaUtils {
             if ((topPath?.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1")) != nil){
                 return UNNotificationSound(named: UNNotificationSoundName(rawValue: topPath!))
             }
+            Logger.shared.d("AudioUtils", "sound NOT found for resource '\(name ?? "nil")' — using system default")
             return UNNotificationSound.default
         }
         return nil
