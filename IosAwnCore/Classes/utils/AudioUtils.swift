@@ -105,10 +105,23 @@ open class AudioUtils: MediaUtils {
     
     open func getSoundFromFile(fromRealPath mediaPath:String) -> UNNotificationSound? {
         if FileManager.default.fileExists(atPath: mediaPath) {
+            // UNNotificationSound(named:) only accepts a file name resolved
+            // against the bundle or Library/Sounds — never an absolute path.
+            if let librarySounds = librarySoundsDirectory(),
+               mediaPath.hasPrefix(librarySounds.path) {
+                let fileName = URL(fileURLWithPath: mediaPath).lastPathComponent
+                return UNNotificationSound(named: UNNotificationSoundName(rawValue: fileName))
+            }
             return UNNotificationSound(named: UNNotificationSoundName(rawValue: mediaPath))
         }
         
         return UNNotificationSound.default
+    }
+    
+    /// `<app>/Library/Sounds`, the second directory iOS searches for named sounds.
+    private func librarySoundsDirectory() -> URL? {
+        return FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("Sounds", isDirectory: true)
     }
     
     open func getSoundFromAsset(_ mediaPath:String) -> UNNotificationSound? {
@@ -125,21 +138,42 @@ open class AudioUtils: MediaUtils {
     open func getSoundFromResource(_ mediaPath:String) -> UNNotificationSound? {
         var mediaPath:String? = cleanMediaPath(mediaPath)
         
-        //do {
-            if mediaPath!.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1") {
-                var topPath:String? = Bundle.main.url(forResource: mediaPath!, withExtension: "aiff")?.absoluteString
+        // copy to mutable variable
+        var name = mediaPath
+        
+        // replaceRegex returns Bool match/success, and mutates the variable 'name'
+        if name != nil && name!.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1") {
                 
-                if ((topPath?.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1")) != nil){
-                    return UNNotificationSound(named: UNNotificationSoundName(rawValue: topPath!))
+            // 1. Try with the extensions (caf, aiff, wav, mp3)
+            let extensions = ["caf", "aiff", "wav", "mp3"]
+            
+            for ext in extensions {
+                if let validName = name, let path = Bundle.main.path(forResource: validName, ofType: ext) {
+                     return UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(validName).\(ext)"))
                 }
-                return UNNotificationSound.default
             }
-            return nil
-          /*
-        } catch let error {
-            Logger.shared.e("AudioUtils", error)
-            return nil
-        }*/
+            
+            // 1b. Sounds the app downloaded into <app>/Library/Sounds/ — iOS
+            //     resolves UNNotificationSound(named:) against that directory
+            //     exactly like the main bundle, using the bare file name.
+            if let validName = name, let librarySounds = librarySoundsDirectory() {
+                for ext in extensions {
+                    let fileName = "\(validName).\(ext)"
+                    if FileManager.default.fileExists(atPath: librarySounds.appendingPathComponent(fileName).path) {
+                        return UNNotificationSound(named: UNNotificationSoundName(rawValue: fileName))
+                    }
+                }
+            }
+            
+            // 2. Fallback to original behavior
+            var topPath:String? = Bundle.main.url(forResource: mediaPath!, withExtension: "aiff")?.absoluteString
+            
+            if ((topPath?.replaceRegex("^.*\\/([^\\/]+)$", replaceWith: "$1")) != nil){
+                return UNNotificationSound(named: UNNotificationSoundName(rawValue: topPath!))
+            }
+            return UNNotificationSound.default
+        }
+        return nil
     }
     
     public func isValidSound(_ mediaPath:String?) -> Bool {
